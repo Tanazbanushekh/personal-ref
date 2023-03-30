@@ -1,0 +1,134 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: "AWS::Serverless-2016-10-31"
+Resources:
+  DevEC2Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      ImageId: ami-007855ac798b5175e
+      InstanceType: t2.micro
+      KeyName: keyforcf
+
+  MyIAMRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "MyIamRole"
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonEC2FullAccess"
+        - "arn:aws:iam::aws:policy/AWSLambda_FullAccess"
+        - "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+        - "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "sts:AssumeRole"
+            Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+
+  S3bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: PublicRead
+
+  MyDyanmoDbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EmployeeTable
+      AttributeDefinitions:
+        - AttributeName: "Id"
+          AttributeType: "N"
+        - AttributeName: "Mobile"
+          AttributeType: "N"
+      KeySchema:
+        - AttributeName: "Id"
+          KeyType: "HASH"
+      ProvisionedThroughput:
+        ReadCapacityUnits: "5"
+        WriteCapacityUnits: "5"
+      GlobalSecondaryIndexes:
+        - IndexName: "myGSI"
+          KeySchema:
+            - AttributeName: "Id"
+              KeyType: "HASH"
+            - AttributeName: "Mobile"
+              KeyType: "RANGE"
+          Projection:
+            ProjectionType: "ALL"
+          ProvisionedThroughput:
+            ReadCapacityUnits: "5"
+            WriteCapacityUnits: "5"
+
+  MyLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: MyLambdaLayer
+      CompatibleRuntimes:
+        - nodejs14.x
+        - nodejs16.x
+      Content:
+        S3Bucket: !Sub "first-cfdemo-s3bucket-9xdpkt5nhukn"
+        S3Key: !Sub "nodejs.zip"
+      Description: includes node_modules,packagejosn,packagelock-json
+
+  MyAPIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: CFAPIGateway
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  MyLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: MyLambda
+      Handler: index.handler
+      CodeUri:
+        Bucket: !Sub "first-cfdemo-s3bucket-9xdpkt5nhukn"
+        Key: !Sub "build.zip"
+      Runtime: nodejs14.x
+      MemorySize: 128
+      Timeout: 120
+      Role: !GetAtt MyIAMRole.Arn
+      Layers:
+        - !Ref MyLayer
+      Events:
+        ApiEvent:
+          RestApiId: !Ref MyAPIGateway
+          Type: Api
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
+      Environment:
+        Variables:
+          NODE_ENV: dev
+
+  MyAPIGatewayResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt MyAPIGateway.RootResourceId
+      PathPart: "{proxy+}"
+      RestApiId: !Ref MyAPIGateway
+
+  MyAPIGatewayMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+      ResourceId: !Ref MyAPIGatewayResource
+      HttpMethod: ANY
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MyLambdaFunction.Arn}/invocations"
+
+  MyAPIGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - MyAPIGatewayMethod
+    Properties:
+      RestApiId: !Ref MyAPIGateway
+      StageName: dev
+      Description: devDis

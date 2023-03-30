@@ -1,0 +1,106 @@
+const AWS = require('aws-sdk');
+const ddb = new AWS.DynamoDB.DocumentClient({region: 'ap-northeast-1'})
+
+exports.handler = async (event) => {
+    var statusCode;
+    var responseBody;
+    
+  var params = {
+        TableName: "myinfo",
+        Item: {
+            'name': event.name,     
+            'Phone': "123"   
+        }
+    }; 
+var updateParams = {
+        TableName: "myinfo",
+        Key:{'name':'tanaz'},
+        UpdateExpression: 'set Phone = :p',
+        ExpressionAttributeValues: {
+            ':p' : "44444444444444444444"
+        }
+    }
+ var scanParams = {                    
+        TableName: "myinfo"
+    }
+
+ var scanQuery = {
+        TableName:"myinfo",
+        FilterExpression: "#mb = :mb",
+        ExpressionAttributeNames:{
+            '#mb' : "name"
+        },
+        ExpressionAttributeValues: {
+            ':mb' : "tanaz"
+        }
+    }
+
+ var queryParams = {
+        TableName: "myinfo",
+        Key: {
+            "name": event.name
+        }
+    }
+ var deleteParams = {
+        TableName: 'myinfo',
+        Key: {
+            "name": "maitri"
+        }
+    }
+    
+  try{
+        const putData = await ddb.put(params).promise();
+        console.log(putData);
+        statusCode = 200;
+        responseBody = "Entry saved in table"
+    }catch(err){
+        console.log(err)
+        statusCode = 200;
+        responseBody = "Entry Failed to save, Some error has occurred" + err;
+    }
+    
+    const update = await ddb.update(updateParams).promise();
+      
+    const data = await ddb.scan(scanParams).promise();
+    
+    const data_filter = await ddb.scan(scanQuery).promise();
+    
+    const data_query = await ddb.get(queryParams).promise();
+    
+    const deleteData = await ddb.delete(deleteParams).promise();
+    
+    const response = {
+        statusCode: statusCode,
+        body : responseBody
+    }
+    const updated_response = {
+        statusCode: 200,
+        body: update
+    }
+    const getResponse = {
+        statusCode: 200,
+        body: data
+    }
+    const getResponse_filter = {
+        statusCode: 200,
+        body: data_filter
+    }
+    const getResponse_query = {
+         statusCode: 200,
+        body: data_query
+    }
+    const delete_data = {   
+      statusCode: 200,         
+      body:"Deleted"   
+    } 
+
+    return {
+        post_method : response,
+        updated_response : updated_response,
+        get_method : getResponse,
+        get_with_filter : getResponse_filter,
+        get_with_query : getResponse_query,
+        delete_data : delete_data
+    }
+};
+
